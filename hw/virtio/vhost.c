@@ -1636,7 +1636,13 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
         .region_del = vhost_iommu_region_del,
     };
 
-    if (hdev->migration_blocker == NULL) {
+    /*
+     * Penguin patch: skip the VHOST_F_LOG_ALL migration_blocker. Penguin
+     * uses savevm/loadvm (not live migration); the dirty-page log facility
+     * is not needed. The vhost-device-vsock backend does not advertise this
+     * feature and we don't want it to block savevm.
+     */
+    if (false && hdev->migration_blocker == NULL) {
         if (!virtio_has_feature_ex(hdev->features_ex, VHOST_F_LOG_ALL)) {
             error_setg(&hdev->migration_blocker,
                        "Migration disabled: vhost lacks VHOST_F_LOG_ALL feature.");

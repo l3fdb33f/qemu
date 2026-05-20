@@ -89,9 +89,33 @@ static uint64_t vuv_get_features(VirtIODevice *vdev,
     return vhost_vsock_common_get_features(vdev, features, errp);
 }
 
+/*
+ * Migration support for vhost-user-vsock.
+ *
+ * The vhost backend (vhost-device-vsock) is a separate process; its in-flight
+ * stream state is lost across a savevm/loadvm boundary. We use the same
+ * pre_save/post_load handlers as the kernel-backed vhost-vsock-pci device:
+ * pre_save asserts vhost is stopped (caller must `stop` before savevm), and
+ * post_load schedules a transport-reset event so the guest's vsock driver
+ * drops all stale stream state once the VM resumes. New AF_VSOCK connections
+ * then go through the freshly-spawned backend with no leftover stream
+ * mappings — matching the IGLOO/Penguin restore flow where the host-side
+ * VPN is also respawned.
+ *
+ * The VHOST_VSOCK_SAVEVM_VERSION constant and the VMSTATE_VIRTIO_DEVICE
+ * field set match vhost-vsock.c so a savevm taken on one device type can in
+ * principle be reloaded on the other (CID + bridges permitting).
+ */
 static const VMStateDescription vuv_vmstate = {
     .name = "vhost-user-vsock",
-    .unmigratable = 1,
+    .minimum_version_id = VHOST_VSOCK_SAVEVM_VERSION,
+    .version_id = VHOST_VSOCK_SAVEVM_VERSION,
+    .fields = (const VMStateField[]) {
+        VMSTATE_VIRTIO_DEVICE,
+        VMSTATE_END_OF_LIST()
+    },
+    .pre_save = vhost_vsock_common_pre_save,
+    .post_load = vhost_vsock_common_post_load,
 };
 
 static void vuv_device_realize(DeviceState *dev, Error **errp)

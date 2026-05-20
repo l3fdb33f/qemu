@@ -2291,13 +2291,19 @@ static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
         }
     }
 
-    if (dev->migration_blocker == NULL &&
-        !virtio_has_feature(dev->protocol_features,
-                            VHOST_USER_PROTOCOL_F_LOG_SHMFD)) {
-        error_setg(&dev->migration_blocker,
-                   "Migration disabled: vhost-user backend lacks "
-                   "VHOST_USER_PROTOCOL_F_LOG_SHMFD feature.");
-    }
+    /*
+     * Penguin patch: do not install a migration_blocker just because the
+     * vhost-user backend lacks VHOST_USER_PROTOCOL_F_LOG_SHMFD.
+     *
+     * LOG_SHMFD is required for live-migration dirty-page tracking. Penguin
+     * only uses savevm/loadvm: the VM is paused while the snapshot is taken
+     * and the backend (vhost-device-vsock) is torn down and respawned across
+     * a restore, so no dirty-page log is needed. The userspace
+     * vhost-device-vsock crate does not implement LOG_SHMFD, but
+     * vhost-user-vsock's pre_save/post_load handlers handle the stream-reset
+     * semantics on its behalf.
+     */
+    (void)VHOST_USER_PROTOCOL_F_LOG_SHMFD;
 
     if (dev->vq_index == 0) {
         err = vhost_setup_backend_channel(dev);
