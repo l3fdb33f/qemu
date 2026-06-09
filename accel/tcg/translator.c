@@ -173,6 +173,15 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * done next -- either exiting this loop or locate the start of
          * the next instruction.
          */
+        /* PANDA RR: increment per-guest-instruction counter (prog_point clock) */
+        {
+            TCGv_i64 _rr_ic = tcg_temp_new_i64();
+            tcg_gen_ld_i64(_rr_ic, tcg_env,
+                           offsetof(CPUState, rr_guest_instr_count) - sizeof(CPUState));
+            tcg_gen_addi_i64(_rr_ic, _rr_ic, 1);
+            tcg_gen_st_i64(_rr_ic, tcg_env,
+                           offsetof(CPUState, rr_guest_instr_count) - sizeof(CPUState));
+        }
         ops->translate_insn(db, cpu);
 
         /*

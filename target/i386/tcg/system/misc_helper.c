@@ -18,6 +18,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/rr_record.h"
 #include "qemu/main-loop.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
@@ -496,6 +497,11 @@ void helper_rdmsr(CPUX86State *env)
         /* XXX: exception? */
         val = 0;
         break;
+    }
+    if (rr_in_record()) {
+        rr_record_input_8(val);
+    } else if (rr_in_replay()) {
+        rr_replay_input_8(&val);
     }
     env->regs[R_EAX] = (uint32_t)(val);
     env->regs[R_EDX] = (uint32_t)(val >> 32);

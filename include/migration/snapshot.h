@@ -68,4 +68,8 @@ bool delete_snapshot(const char *name,
  */
 void load_snapshot_resume(RunState state);
 
+/* PANDA-NG RR: device-agnostic full-machine snapshot to/from a plain file. */
+int panda_rr_savevm_to_file(const char *path, Error **errp);
+int panda_rr_loadvm_from_file(const char *path, Error **errp);
+
 #endif

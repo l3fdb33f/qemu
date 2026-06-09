@@ -328,6 +328,34 @@ SRST
 ERST
 
     {
+        .name       = "begin_record",
+        .args_type  = "filename:s",
+        .params     = "filename",
+        .help       = "begin PANDA record/replay recording to <filename>-rr-{snp,nondet.log}",
+        .cmd        = hmp_begin_record,
+    },
+    {
+        .name       = "end_record",
+        .args_type  = "",
+        .params     = "",
+        .help       = "stop PANDA recording",
+        .cmd        = hmp_end_record,
+    },
+    {
+        .name       = "begin_replay",
+        .args_type  = "filename:s",
+        .params     = "filename",
+        .help       = "begin PANDA replay from <filename>-rr-{snp,nondet.log}",
+        .cmd        = hmp_begin_replay,
+    },
+    {
+        .name       = "end_replay",
+        .args_type  = "",
+        .params     = "",
+        .help       = "stop PANDA replay",
+        .cmd        = hmp_end_replay,
+    },
+    {
         .name       = "savevm",
         .args_type  = "name:s?",
         .params     = "tag",

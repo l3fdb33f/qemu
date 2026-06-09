@@ -4405,7 +4405,7 @@ foreach target : target_dirs
       exe_name += '-unsigned'
     endif
 
-    emulator = executable(exe_name, exe['sources'],
+    emulator_exe = executable(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
                dependencies: arch_deps + exe['dependencies'],
@@ -4424,7 +4424,7 @@ foreach target : target_dirs
 
     if host_os == 'darwin'
       icon = 'pc-bios/qemu.rsrc'
-      build_input = [emulator, files(icon)]
+      build_input = [emulator_exe, files(icon)]  # sign the executable, not libpanda
       install_input = [
         get_option('bindir') / exe_name,
         meson.current_source_dir() / icon

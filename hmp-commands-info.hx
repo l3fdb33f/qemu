@@ -99,6 +99,13 @@ SRST
 ERST
 
     {
+        .name       = "rr",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show PANDA record/replay status (guest instr count)",
+        .cmd        = hmp_info_rr,
+    },
+    {
         .name       = "registers",
         .args_type  = "cpustate_all:-a,vcpu:i?",
         .params     = "[-a|vcpu]",

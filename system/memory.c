@@ -14,6 +14,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/rr_record.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "system/memory.h"
@@ -1472,6 +1473,13 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
     unsigned size = memop_size(op);
     MemTxResult r;
 
+    if (rr_in_replay() && current_cpu) {
+        uint64_t _rrv = 0;
+        rr_replay_io_read(&_rrv, size);
+        *pval = _rrv;
+        return MEMTX_OK;
+    }
+
     if (mr->alias) {
         return memory_region_dispatch_read(mr->alias,
                                            mr->alias_offset + addr,
@@ -1484,6 +1492,9 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
 
     r = memory_region_dispatch_read1(mr, addr, pval, size, attrs);
     adjust_endianness(mr, pval, op);
+    if (rr_in_record() && current_cpu) {
+        rr_record_io_read(*pval, size);
+    }
     return r;
 }
 

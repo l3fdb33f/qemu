@@ -530,6 +530,15 @@ void hmp_info_registers(Monitor *mon, const QDict *qdict)
     }
 }
 
+void hmp_info_rr(Monitor *mon, const QDict *qdict)
+{
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        monitor_printf(mon, "CPU#%d rr_guest_instr_count: %" PRIu64 "\n",
+                       cs->cpu_index, cs->rr_guest_instr_count);
+    }
+}
+
 static void memory_dump(Monitor *mon, int count, int format, int wsize,
                         uint64_t addr, bool is_physical)
 {

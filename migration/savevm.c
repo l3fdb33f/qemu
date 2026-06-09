@@ -3379,6 +3379,81 @@ void qmp_xen_load_devices_state(const char *filename, Error **errp)
     migration_incoming_state_destroy();
 }
 
+/* ----- PANDA-NG record/replay: device-agnostic full-machine snapshot ----- */
+/* Save complete VM state (CPU + RAM + all device vmstate) to a plain file,    */
+/* independent of any block-device snapshot support. Caller must have stopped  */
+/* the VM (vm_stop) first. Returns 0 on success, <0 on error.                  */
+int panda_rr_savevm_to_file(const char *path, Error **errp)
+{
+    QIOChannelFile *ioc;
+    QEMUFile *f;
+    int ret;
+
+    if (!migrate_can_snapshot(errp)) {
+        return -1;
+    }
+    if (migration_is_blocked(errp)) {
+        return -1;
+    }
+
+    bdrv_drain_all_begin();
+    global_state_store();
+
+    ioc = qio_channel_file_new_path(path, O_WRONLY | O_CREAT | O_TRUNC, 0660, errp);
+    if (!ioc) {
+        bdrv_drain_all_end();
+        return -1;
+    }
+    qio_channel_set_name(QIO_CHANNEL(ioc), "panda-rr-snapshot-save");
+    f = qemu_file_new_output(QIO_CHANNEL(ioc));
+    object_unref(OBJECT(ioc));
+
+    ret = qemu_savevm_state(f, errp);
+    if (qemu_fclose(f) < 0 && ret == 0) {
+        ret = -1;
+    }
+
+    bdrv_drain_all_end();
+    return ret;
+}
+
+/* Restore VM state previously written by panda_rr_savevm_to_file. Caller must  */
+/* have stopped the VM (vm_stop(RUN_STATE_RESTORE_VM)) first, and should resume */
+/* afterwards. Returns 0 on success, <0 on error.                              */
+int panda_rr_loadvm_from_file(const char *path, Error **errp)
+{
+    QIOChannelFile *ioc;
+    QEMUFile *f;
+    MigrationIncomingState *mis = migration_incoming_get_current();
+    int ret;
+
+    if (!migrate_can_snapshot(errp)) {
+        return -1;
+    }
+
+    ioc = qio_channel_file_new_path(path, O_RDONLY, 0, errp);
+    if (!ioc) {
+        return -1;
+    }
+    qio_channel_set_name(QIO_CHANNEL(ioc), "panda-rr-snapshot-load");
+    f = qemu_file_new_input(QIO_CHANNEL(ioc));
+    object_unref(OBJECT(ioc));
+
+    bdrv_drain_all_begin();
+    qemu_system_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
+    mis->from_src_file = f;
+
+    if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
+        bdrv_drain_all_end();
+        return -1;
+    }
+    ret = qemu_loadvm_state(f, errp);
+
+    migration_incoming_state_destroy();
+    bdrv_drain_all_end();
+    return ret;
+}
+
 bool load_snapshot(const char *name, const char *vmstate,
                    bool has_devices, strList *devices, Error **errp)
 {

@@ -1,7 +1,14 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#if defined(__APPLE__)
+/* macOS clang lacks C11 <threads.h>; thread_local maps to the keyword */
+#ifndef thread_local
+#define thread_local _Thread_local
+#endif
+#else
 #include <threads.h>
+#endif
 
 #include "panda/debug.h"
 #include "panda/plugin.h"

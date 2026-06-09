@@ -19,6 +19,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/rr_record.h"
+static int rr_dbg_intno_rec, rr_dbg_intno_rep;
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "cpu.h"
@@ -203,7 +205,24 @@ bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
     case CPU_INTERRUPT_HARD:
         cpu_svm_check_intercept_param(env, SVM_EXIT_INTR, 0, 0);
         cpu_reset_interrupt(cs, CPU_INTERRUPT_HARD | CPU_INTERRUPT_VIRQ);
-        intno = cpu_get_pic_interrupt(env);
+        if (rr_in_replay()) {
+            uint32_t _v = 0;
+            rr_replay_input_4(&_v);
+            intno = _v;
+            if (rr_dbg_intno_rep < 16) {
+                fprintf(stderr, "RRINTNO REP #%d intno=0x%x\n",
+                        rr_dbg_intno_rep++, intno);
+            }
+        } else {
+            intno = cpu_get_pic_interrupt(env);
+            if (rr_in_record()) {
+                rr_record_input_4((uint32_t)intno);
+                if (rr_dbg_intno_rec < 16) {
+                    fprintf(stderr, "RRINTNO REC #%d intno=0x%x\n",
+                            rr_dbg_intno_rec++, intno);
+                }
+            }
+        }
         qemu_log_mask(CPU_LOG_INT,
                       "Servicing hardware INT=0x%02x\n", intno);
         do_interrupt_x86_hardirq(env, intno, 1);

@@ -33,6 +33,7 @@
 #endif /* CONFIG_TCG */
 
 #include "exec/cputlb.h"
+#include "exec/rr_record.h"
 #include "exec/page-protection.h"
 #include "exec/target_page.h"
 #include "exec/translation-block.h"

@@ -38,6 +38,7 @@
 #include "qemu/main-loop.h"
 #include "exec/icount.h"
 #include "exec/replay-core.h"
+#include "exec/rr_record.h"
 #include "system/tcg.h"
 #include "exec/helper-proto-common.h"
 #include "tcg-accel-ops.h"
@@ -834,6 +835,11 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * tcg_kick_vcpu_thread())
      */
     qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+#ifndef CONFIG_USER_ONLY
+    if (rr_in_replay()) {
+        rr_replay_set_interrupt_request(cpu);
+    }
+#endif
 
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
@@ -877,6 +883,9 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
              * True when it is, and we should restart on a new TB,
              * and via longjmp via cpu_loop_exit.
              */
+            if (rr_in_record()) {
+                rr_record_interrupt_request(interrupt_request);
+            }
             if (tcg_ops->cpu_exec_interrupt(cpu, interrupt_request)) {
                 if (!tcg_ops->need_replay_interrupt ||
                     tcg_ops->need_replay_interrupt(interrupt_request)) {
@@ -1002,7 +1011,46 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 break;
             }
 
+#ifndef CONFIG_USER_ONLY
+            if (rr_on()) {
+                if (rr_in_replay() && rr_replay_finished()) {
+                    rr_replay_mark_complete();
+                } else {
+                    uint32_t _lim = CF_COUNT_MASK;
+                    if (rr_in_replay()) {
+                        uint64_t _until = rr_num_instr_before_next_interrupt();
+                        if (_until != (uint64_t)-1 && _until < CF_COUNT_MASK) {
+                            _lim = (uint32_t)(_until ? _until : 1);
+                        }
+                    }
+                    s.cflags = (s.cflags & ~CF_COUNT_MASK) | _lim
+                               | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;  /* DIAG: align TBs */
+                }
+            }
+#endif
             tb = tb_lookup(cpu, s);
+#ifndef CONFIG_USER_ONLY
+            {
+                static int rr_tb_rec, rr_tb_rep;
+                int *cnt = rr_in_record() ? &rr_tb_rec
+                          : (rr_in_replay() ? &rr_tb_rep : (int *)0);
+                const char *tg = rr_in_record() ? "REC" : "REP";
+                if (cnt && *cnt < 4000) {
+                    uint8_t b[24] = {0};
+                    char hx[64]; int _i;
+                    cpu_memory_rw_debug(cpu, s.pc, b, sizeof(b), false);
+                    for (_i = 0; _i < 24; _i++) {
+                        static const char H[] = "0123456789abcdef";
+                        hx[_i*2] = H[b[_i] >> 4];
+                        hx[_i*2+1] = H[b[_i] & 15];
+                    }
+                    hx[48] = 0;
+                    fprintf(stderr, "RRTB %s #%d count=%llu pc=0x%llx bytes=%s\n",
+                            tg, (*cnt)++, (unsigned long long)rr_get_guest_instr_count(),
+                            (unsigned long long)s.pc, hx);
+                }
+            }
+#endif
             if (tb == NULL) {
                 CPUJumpCache *jc;
                 uint32_t h;

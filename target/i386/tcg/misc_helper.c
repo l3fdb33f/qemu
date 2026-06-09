@@ -21,6 +21,7 @@
 #include "qemu/log.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
+#include "exec/rr_record.h"
 #include "exec/cputlb.h"
 #include "helper-tcg.h"
 
@@ -78,6 +79,11 @@ void helper_rdtsc(CPUX86State *env)
     cpu_svm_check_intercept_param(env, SVM_EXIT_RDTSC, 0, GETPC());
 
     val = cpu_get_tsc(env) + env->tsc_offset;
+    if (rr_in_record()) {
+        rr_record_input_8(val);
+    } else if (rr_in_replay()) {
+        rr_replay_input_8(&val);
+    }
     env->regs[R_EAX] = (uint32_t)(val);
     env->regs[R_EDX] = (uint32_t)(val >> 32);
 }
