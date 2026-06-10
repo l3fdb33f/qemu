@@ -1472,17 +1472,29 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
 {
     unsigned size = memop_size(op);
     MemTxResult r;
+    /*
+     * RR: one CPU MMIO access can re-enter this function (region resolution /
+     * MO_BE piece reads), so a single guest read/write shows up as several
+     * memory_region_dispatch_read frames. Capture (record) / short-circuit
+     * (replay) EXACTLY ONCE per access, at the outermost frame, or record
+     * double-logs vs replay's single pull and the streams desync. Alias
+     * forwarding is transparent (kept at the same depth). Single-thread TCG, so
+     * thread-local depth is per-vCPU and safe.
+     */
+    static __thread int _rr_io_depth;
 
-    if (rr_in_replay() && current_cpu) {
+    if (rr_in_replay() && current_cpu && _rr_io_depth == 0) {
         uint64_t _rrv = 0;
+        uint64_t _c = rr_get_guest_instr_count();
         rr_replay_io_read(&_rrv, size);
         *pval = _rrv;
-        if (mr->name && strstr(mr->name, "apic")) {
+        {
             static int _n;
-            if (_n < 400) {
-                fprintf(stderr, "RRAPIC REP-RD #%d count=%llu off=0x%llx sz=%u val=0x%llx\n",
-                        _n++, (unsigned long long)rr_get_guest_instr_count(),
-                        (unsigned long long)addr, size, (unsigned long long)_rrv);
+            if (_c >= 40000 && _c <= 95000 && _n < 500) {
+                fprintf(stderr, "RRRD REP #%d count=%llu mr=%s off=0x%llx sz=%u "
+                        "val=0x%llx\n", _n++, (unsigned long long)_c,
+                        mr->name ? mr->name : "?", (unsigned long long)addr, size,
+                        (unsigned long long)_rrv);
             }
         }
         return MEMTX_OK;
@@ -1498,19 +1510,24 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
         return MEMTX_DECODE_ERROR;
     }
 
+    _rr_io_depth++;
     r = memory_region_dispatch_read1(mr, addr, pval, size, attrs);
+    uint64_t _rr_raw = *pval;
     adjust_endianness(mr, pval, op);
-    if (rr_in_record() && current_cpu) {
+    if (rr_in_record() && current_cpu && _rr_io_depth == 1) {
         rr_record_io_read(*pval, size);
-        if (mr->name && strstr(mr->name, "apic")) {
+        {
+            uint64_t _c = rr_get_guest_instr_count();
             static int _n;
-            if (_n < 400) {
-                fprintf(stderr, "RRAPIC REC-RD #%d count=%llu off=0x%llx sz=%u val=0x%llx\n",
-                        _n++, (unsigned long long)rr_get_guest_instr_count(),
-                        (unsigned long long)addr, size, (unsigned long long)*pval);
+            if (_c >= 40000 && _c <= 95000 && _n < 500) {
+                fprintf(stderr, "RRRD REC #%d count=%llu mr=%s off=0x%llx sz=%u "
+                        "raw=0x%llx adj=0x%llx\n", _n++, (unsigned long long)_c,
+                        mr->name ? mr->name : "?", (unsigned long long)addr, size,
+                        (unsigned long long)_rr_raw, (unsigned long long)*pval);
             }
         }
     }
+    _rr_io_depth--;
     return r;
 }
 

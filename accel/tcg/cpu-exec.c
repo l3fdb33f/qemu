@@ -1035,56 +1035,19 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                     s.cflags = (s.cflags & ~CF_COUNT_MASK) | _lim
                                | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
                 }
-            } else if (rr_in_record() && rr_get_guest_instr_count() < 12000) {
-                /* DIAG: fine (unchained) record trace only in the divergence
-                 * window so it aligns with replay; fast/chained elsewhere. */
-                if (!(s.cflags & CF_MEMI_ONLY)) {  /* don't widen io-recompile TBs */
-                    s.cflags = (s.cflags & ~CF_COUNT_MASK) | CF_COUNT_MASK
-                               | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
-                }
-            }
-            /* DIAG: detect a replay RIP-stall (same pc re-looked-up) and dump
-             * why the prior TB did not advance RIP (clamp? injected/masked IRQ?
-             * pending exception? io-recompile?). */
-            if (rr_in_replay()) {
-                static uint64_t _rr_prev_pc;
-                static int _rr_stall;
-                if (s.pc == _rr_prev_pc) {
-                    if (_rr_stall < 80) {
-                        fprintf(stderr, "RRSTALL count=%llu pc=0x%llx ireq=0x%x "
-                                "exc=%d cflags=0x%x lim_until=%llu\n",
-                                (unsigned long long)rr_get_guest_instr_count(),
-                                (unsigned long long)s.pc, cpu->interrupt_request,
-                                cpu->exception_index, (unsigned)s.cflags,
-                                (unsigned long long)rr_num_instr_before_next_interrupt());
+                /* DIAG: cheap replay progress heartbeat (no per-TB overhead). */
+                {
+                    static uint64_t _rr_hb;
+                    uint64_t _c = rr_get_guest_instr_count();
+                    if (_c >= _rr_hb) {
+                        fprintf(stderr, "RRHB replay count=%llu\n",
+                                (unsigned long long)_c);
+                        _rr_hb = _c + 100000;
                     }
-                    _rr_stall++;
-                } else {
-                    _rr_stall = 0;
                 }
-                _rr_prev_pc = s.pc;
             }
 #endif
             tb = tb_lookup(cpu, s);
-#ifndef CONFIG_USER_ONLY
-            /* DIAG: instruction-level trace for BOTH modes over the same
-             * count-bounded window, with bytes at the PC, so REC and REP can be
-             * aligned by (count,pc) to localize the first divergent block. */
-            if (rr_on() && rr_get_guest_instr_count() < 12000) {
-                static int rr_tb_seq;
-                const char *tg = rr_in_record() ? "REC" : "REP";
-                uint8_t b[16] = {0}; char hx[40]; int _i;
-                cpu_memory_rw_debug(cpu, s.pc, b, 16, false);
-                for (_i = 0; _i < 16; _i++) {
-                    static const char H[] = "0123456789abcdef";
-                    hx[_i*2] = H[b[_i] >> 4]; hx[_i*2+1] = H[b[_i] & 15];
-                }
-                hx[32] = 0;
-                fprintf(stderr, "RRTB %s #%d count=%llu pc=0x%llx bytes=%s\n",
-                        tg, rr_tb_seq++, (unsigned long long)rr_get_guest_instr_count(),
-                        (unsigned long long)s.pc, hx);
-            }
-#endif
             if (tb == NULL) {
                 CPUJumpCache *jc;
                 uint32_t h;
