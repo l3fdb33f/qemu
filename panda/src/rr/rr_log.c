@@ -18,9 +18,6 @@
 #include "rr_log.h"
 
 volatile RR_mode rr_mode = RR_OFF;
-static int rr_dbg_rec;
-static int rr_dbg_rep;
-static int rr_dbg_int_rec, rr_dbg_int_rep;
 
 static FILE *rr_nondet_log;
 static char  rr_name[1024];
@@ -64,16 +61,6 @@ static void rr_log_write(RR_log_entry_kind kind, const void *data, size_t n)
     }
     ic = rr_get_guest_instr_count();
     k = (uint8_t)kind;
-    if (rr_dbg_rec < 24) {
-        uint64_t _pc = (first_cpu && first_cpu->cc->get_pc)
-                       ? (uint64_t)first_cpu->cc->get_pc(first_cpu) : 0;
-        uint64_t _val = 0;
-        if (n) { memcpy(&_val, data, n > 8 ? 8 : n); }
-        fprintf(stderr, "RRDBG REC #%d count=%llu kind=%u pc=0x%llx val=0x%llx\n",
-                rr_dbg_rec, (unsigned long long)ic, kind,
-                (unsigned long long)_pc, (unsigned long long)_val);
-        rr_dbg_rec++;
-    }
     fwrite(&ic, sizeof(ic), 1, rr_nondet_log);
     fwrite(&k,  sizeof(k),  1, rr_nondet_log);
     fwrite(&cs, sizeof(cs), 1, rr_nondet_log);
@@ -100,11 +87,6 @@ void rr_record_io_read(uint64_t val, unsigned size)
 void rr_record_interrupt_request(int interrupt_request)
 {
     int32_t v = interrupt_request;
-    if (rr_dbg_int_rec < 16) {
-        fprintf(stderr, "RRINT REC #%d count=%llu ireq=0x%x\n",
-                rr_dbg_int_rec++, (unsigned long long)rr_get_guest_instr_count(),
-                interrupt_request);
-    }
     rr_log_write(RR_INTERRUPT_REQUEST, &v, sizeof(v));
 }
 
@@ -268,16 +250,6 @@ static int rr_replay_pull(uint8_t kind, uint64_t *out)
     }
     e = &rr_entries[rr_idx];
     cur = rr_get_guest_instr_count();
-    if (rr_dbg_rep < 24) {
-        uint64_t _pc = (first_cpu && first_cpu->cc->get_pc)
-                       ? (uint64_t)first_cpu->cc->get_pc(first_cpu) : 0;
-        fprintf(stderr, "RRDBG REP #%d cur=%llu want=%u pc=0x%llx "
-                "head_count=%llu head_kind=%u head_val=0x%llx\n",
-                rr_dbg_rep, (unsigned long long)cur, kind,
-                (unsigned long long)_pc, (unsigned long long)e->count, e->kind,
-                (unsigned long long)e->val);
-        rr_dbg_rep++;
-    }
     if (e->kind != kind || e->count != cur) {
         rr_report_divergence("pull kind/count mismatch", kind);
         return -1;
@@ -349,12 +321,6 @@ int rr_do_begin_record(const char *name)
 
     rr_reset_count();
     rr_mode = RR_RECORD;
-    {
-        uint64_t _pc = (first_cpu && first_cpu->cc->get_pc)
-                       ? (uint64_t)first_cpu->cc->get_pc(first_cpu) : 0;
-        fprintf(stderr, "RRDBG BEGIN_RECORD resume pc=0x%llx halted=%d\n",
-                (unsigned long long)_pc, first_cpu ? first_cpu->halted : -1);
-    }
     vm_start();
     return 0;
 }
@@ -433,19 +399,8 @@ int rr_do_begin_replay(const char *name)
 
     rr_reset_count();
     rr_mode = RR_REPLAY;
-    /*
-     * NOTE: the replay DRIVER (fill queue from log, assert prog-point at each
-     * capture site, inject recorded values, replay skipped device calls) lands
-     * in WS-1 Increment 3. For 1b we only validate snapshot restore + mode.
-     */
     info_report("RR: replay snapshot restored; recorded length = %" PRIu64
-                " guest instrs (driver lands in Inc 3)", final_count);
-    {
-        uint64_t _pc = (first_cpu && first_cpu->cc->get_pc)
-                       ? (uint64_t)first_cpu->cc->get_pc(first_cpu) : 0;
-        fprintf(stderr, "RRDBG BEGIN_REPLAY resume pc=0x%llx halted=%d\n",
-                (unsigned long long)_pc, first_cpu ? first_cpu->halted : -1);
-    }
+                " guest instrs", final_count);
     vm_start();
     return 0;
 }
@@ -484,11 +439,6 @@ void rr_replay_set_interrupt_request(void *cpu_)
             e->count == rr_get_guest_instr_count()) {
             v = (uint32_t)e->val;
             rr_idx++;
-            if (rr_dbg_int_rep < 16) {
-                fprintf(stderr, "RRINT REP #%d count=%llu ireq=0x%x\n",
-                        rr_dbg_int_rep++, (unsigned long long)rr_get_guest_instr_count(),
-                        v);
-            }
         }
     }
     cpu->interrupt_request = v;

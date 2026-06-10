@@ -1035,16 +1035,6 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                     s.cflags = (s.cflags & ~CF_COUNT_MASK) | _lim
                                | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
                 }
-                /* DIAG: cheap replay progress heartbeat (no per-TB overhead). */
-                {
-                    static uint64_t _rr_hb;
-                    uint64_t _c = rr_get_guest_instr_count();
-                    if (_c >= _rr_hb) {
-                        fprintf(stderr, "RRHB replay count=%llu\n",
-                                (unsigned long long)_c);
-                        _rr_hb = _c + 100000;
-                    }
-                }
             }
 #endif
             tb = tb_lookup(cpu, s);
