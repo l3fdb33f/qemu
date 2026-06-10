@@ -1477,6 +1477,14 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
         uint64_t _rrv = 0;
         rr_replay_io_read(&_rrv, size);
         *pval = _rrv;
+        if (mr->name && strstr(mr->name, "apic")) {
+            static int _n;
+            if (_n < 400) {
+                fprintf(stderr, "RRAPIC REP-RD #%d count=%llu off=0x%llx sz=%u val=0x%llx\n",
+                        _n++, (unsigned long long)rr_get_guest_instr_count(),
+                        (unsigned long long)addr, size, (unsigned long long)_rrv);
+            }
+        }
         return MEMTX_OK;
     }
 
@@ -1494,6 +1502,14 @@ MemTxResult memory_region_dispatch_read(MemoryRegion *mr,
     adjust_endianness(mr, pval, op);
     if (rr_in_record() && current_cpu) {
         rr_record_io_read(*pval, size);
+        if (mr->name && strstr(mr->name, "apic")) {
+            static int _n;
+            if (_n < 400) {
+                fprintf(stderr, "RRAPIC REC-RD #%d count=%llu off=0x%llx sz=%u val=0x%llx\n",
+                        _n++, (unsigned long long)rr_get_guest_instr_count(),
+                        (unsigned long long)addr, size, (unsigned long long)*pval);
+            }
+        }
     }
     return r;
 }
@@ -1531,6 +1547,16 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemTxAttrs attrs)
 {
     unsigned size = memop_size(op);
+
+    if (rr_on() && current_cpu && mr->name && strstr(mr->name, "apic")) {
+        static int _n;
+        if (_n < 800) {
+            fprintf(stderr, "RRAPIC %s-WR #%d count=%llu off=0x%llx sz=%u data=0x%llx\n",
+                    rr_in_record() ? "REC" : "REP", _n++,
+                    (unsigned long long)rr_get_guest_instr_count(),
+                    (unsigned long long)addr, size, (unsigned long long)data);
+        }
+    }
 
     if (mr->alias) {
         return memory_region_dispatch_write(mr->alias,

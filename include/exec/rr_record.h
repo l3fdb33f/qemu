@@ -39,5 +39,7 @@ uint64_t rr_get_guest_instr_count(void);
 void rr_replay_set_interrupt_request(void *cpu);
 uint64_t rr_num_instr_before_next_interrupt(void);
 void rr_replay_mark_complete(void);
+void rr_record_dma_write(uint64_t addr, const uint8_t *buf, uint32_t len);
+void rr_replay_apply_dma(void);
 
 #endif /* EXEC_RR_RECORD_H */

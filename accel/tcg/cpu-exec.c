@@ -1012,43 +1012,77 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             }
 
 #ifndef CONFIG_USER_ONLY
-            if (rr_on()) {
-                if (rr_in_replay() && rr_replay_finished()) {
+            if (rr_in_replay()) {
+                rr_replay_apply_dma();
+                if (rr_replay_finished()) {
                     rr_replay_mark_complete();
+                } else if (s.cflags & CF_MEMI_ONLY) {
+                    /*
+                     * cpu_io_recompile() requested a narrowed TB to isolate an
+                     * MMIO instruction (cflags_next_tb = curr_cflags|CF_MEMI_ONLY
+                     * |CF_NOIRQ|n, n==1/2) so it can complete I/O. Honor that exact
+                     * count: if we overwrite it with our interrupt clamp the MMIO
+                     * insn is no longer last, can_do_io stays false, the recompile
+                     * re-fires every iteration, RIP never advances, and our per-insn
+                     * rr_guest_instr_count inflates -> replay prog-point drifts ->
+                     * divergence. Only keep chaining disabled.
+                     */
+                    s.cflags |= CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
                 } else {
-                    uint32_t _lim = CF_COUNT_MASK;
-                    if (rr_in_replay()) {
-                        uint64_t _until = rr_num_instr_before_next_interrupt();
-                        if (_until != (uint64_t)-1 && _until < CF_COUNT_MASK) {
-                            _lim = (uint32_t)(_until ? _until : 1);
-                        }
-                    }
+                    uint64_t _until = rr_num_instr_before_next_interrupt();
+                    uint32_t _lim = (_until != (uint64_t)-1 && _until < CF_COUNT_MASK)
+                                    ? (uint32_t)(_until ? _until : 1) : CF_COUNT_MASK;
                     s.cflags = (s.cflags & ~CF_COUNT_MASK) | _lim
-                               | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;  /* DIAG: align TBs */
+                               | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
                 }
+            } else if (rr_in_record() && rr_get_guest_instr_count() < 12000) {
+                /* DIAG: fine (unchained) record trace only in the divergence
+                 * window so it aligns with replay; fast/chained elsewhere. */
+                if (!(s.cflags & CF_MEMI_ONLY)) {  /* don't widen io-recompile TBs */
+                    s.cflags = (s.cflags & ~CF_COUNT_MASK) | CF_COUNT_MASK
+                               | CF_NO_GOTO_TB | CF_NO_GOTO_PTR;
+                }
+            }
+            /* DIAG: detect a replay RIP-stall (same pc re-looked-up) and dump
+             * why the prior TB did not advance RIP (clamp? injected/masked IRQ?
+             * pending exception? io-recompile?). */
+            if (rr_in_replay()) {
+                static uint64_t _rr_prev_pc;
+                static int _rr_stall;
+                if (s.pc == _rr_prev_pc) {
+                    if (_rr_stall < 80) {
+                        fprintf(stderr, "RRSTALL count=%llu pc=0x%llx ireq=0x%x "
+                                "exc=%d cflags=0x%x lim_until=%llu\n",
+                                (unsigned long long)rr_get_guest_instr_count(),
+                                (unsigned long long)s.pc, cpu->interrupt_request,
+                                cpu->exception_index, (unsigned)s.cflags,
+                                (unsigned long long)rr_num_instr_before_next_interrupt());
+                    }
+                    _rr_stall++;
+                } else {
+                    _rr_stall = 0;
+                }
+                _rr_prev_pc = s.pc;
             }
 #endif
             tb = tb_lookup(cpu, s);
 #ifndef CONFIG_USER_ONLY
-            {
-                static int rr_tb_rec, rr_tb_rep;
-                int *cnt = rr_in_record() ? &rr_tb_rec
-                          : (rr_in_replay() ? &rr_tb_rep : (int *)0);
+            /* DIAG: instruction-level trace for BOTH modes over the same
+             * count-bounded window, with bytes at the PC, so REC and REP can be
+             * aligned by (count,pc) to localize the first divergent block. */
+            if (rr_on() && rr_get_guest_instr_count() < 12000) {
+                static int rr_tb_seq;
                 const char *tg = rr_in_record() ? "REC" : "REP";
-                if (cnt && *cnt < 4000) {
-                    uint8_t b[24] = {0};
-                    char hx[64]; int _i;
-                    cpu_memory_rw_debug(cpu, s.pc, b, sizeof(b), false);
-                    for (_i = 0; _i < 24; _i++) {
-                        static const char H[] = "0123456789abcdef";
-                        hx[_i*2] = H[b[_i] >> 4];
-                        hx[_i*2+1] = H[b[_i] & 15];
-                    }
-                    hx[48] = 0;
-                    fprintf(stderr, "RRTB %s #%d count=%llu pc=0x%llx bytes=%s\n",
-                            tg, (*cnt)++, (unsigned long long)rr_get_guest_instr_count(),
-                            (unsigned long long)s.pc, hx);
+                uint8_t b[16] = {0}; char hx[40]; int _i;
+                cpu_memory_rw_debug(cpu, s.pc, b, 16, false);
+                for (_i = 0; _i < 16; _i++) {
+                    static const char H[] = "0123456789abcdef";
+                    hx[_i*2] = H[b[_i] >> 4]; hx[_i*2+1] = H[b[_i] & 15];
                 }
+                hx[32] = 0;
+                fprintf(stderr, "RRTB %s #%d count=%llu pc=0x%llx bytes=%s\n",
+                        tg, rr_tb_seq++, (unsigned long long)rr_get_guest_instr_count(),
+                        (unsigned long long)s.pc, hx);
             }
 #endif
             if (tb == NULL) {

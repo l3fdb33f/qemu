@@ -3272,6 +3272,11 @@ static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
         result |= flatview_write_continue_step(attrs, buf, len, mr_addr, &l,
                                                mr);
 
+        if (rr_in_record() && !current_cpu &&
+            memory_access_is_direct(mr, true, attrs)) {
+            rr_record_dma_write((uint64_t)addr, buf, (uint32_t)l);
+        }
+
         len -= l;
         buf += l;
         addr += l;
@@ -3702,6 +3707,17 @@ void *address_space_map(AddressSpace *as,
     RCU_READ_LOCK_GUARD();
     fv = address_space_to_flatview(as);
     mr = flatview_translate(fv, addr, &xlat, &l, is_write, attrs);
+
+    if (rr_in_record() && !current_cpu && is_write &&
+        memory_access_is_direct(mr, is_write, attrs)) {
+        static int _rrmap; 
+        if (_rrmap < 25) {
+            fprintf(stderr, "RRMAP direct write-map addr=0x%llx len=%llu count=%llu\n",
+                    (unsigned long long)addr, (unsigned long long)l,
+                    (unsigned long long)rr_get_guest_instr_count());
+            _rrmap++;
+        }
+    }
 
     if (!memory_access_is_direct(mr, is_write, attrs)) {
         size_t used = qatomic_read(&as->bounce_buffer_size);

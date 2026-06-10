@@ -12,6 +12,7 @@
 #include "monitor/monitor.h"
 #include "monitor/hmp.h"
 #include "hw/core/cpu.h"
+#include "exec/cpu-common.h"
 #include "system/runstate.h"
 #include "migration/snapshot.h"
 #include "rr_log.h"
@@ -123,6 +124,9 @@ typedef struct {
     uint8_t  kind;
     uint8_t  cs;
     uint64_t val;     /* variant payload, zero-extended */
+    uint64_t dma_addr;  /* RR_SKIPPED_CALL: device->RAM DMA guest phys addr */
+    uint32_t dma_len;
+    uint8_t *dma_buf;
 } RR_entry;
 
 static RR_entry *rr_entries;
@@ -167,9 +171,28 @@ static int rr_replay_load_entries(void)
         if (fread(&cs, 1, 1, rr_nondet_log) != 1) {
             break;
         }
-        vs = rr_variant_size(kind);
-        if (vs && fread(&val, vs, 1, rr_nondet_log) != 1) {
-            break;
+        uint64_t dma_addr = 0;
+        uint32_t dma_len = 0;
+        uint8_t *dma_buf = NULL;
+        if (kind == RR_SKIPPED_CALL) {
+            if (fread(&dma_addr, sizeof(dma_addr), 1, rr_nondet_log) != 1) {
+                break;
+            }
+            if (fread(&dma_len, sizeof(dma_len), 1, rr_nondet_log) != 1) {
+                break;
+            }
+            if (dma_len) {
+                dma_buf = g_malloc(dma_len);
+                if (fread(dma_buf, dma_len, 1, rr_nondet_log) != 1) {
+                    g_free(dma_buf);
+                    break;
+                }
+            }
+        } else {
+            vs = rr_variant_size(kind);
+            if (vs && fread(&val, vs, 1, rr_nondet_log) != 1) {
+                break;
+            }
         }
         if (rr_nentries == cap) {
             cap *= 2;
@@ -179,6 +202,9 @@ static int rr_replay_load_entries(void)
         rr_entries[rr_nentries].kind = kind;
         rr_entries[rr_nentries].cs = cs;
         rr_entries[rr_nentries].val = val;
+        rr_entries[rr_nentries].dma_addr = dma_addr;
+        rr_entries[rr_nentries].dma_len = dma_len;
+        rr_entries[rr_nentries].dma_buf = dma_buf;
         rr_nentries++;
         if (kind == RR_END_OF_LOG) {
             break;
@@ -190,6 +216,7 @@ static int rr_replay_load_entries(void)
         ssize_t i;
         for (i = (ssize_t)rr_nentries - 1; i >= 0; i--) {
             if (rr_entries[i].kind == RR_INTERRUPT_REQUEST ||
+                rr_entries[i].kind == RR_SKIPPED_CALL ||
                 rr_entries[i].kind == RR_END_OF_LOG) {
                 nxt = rr_entries[i].count;
             }
@@ -487,6 +514,45 @@ void rr_replay_mark_complete(void)
                     (unsigned long long)rr_final_count,
                     (unsigned long long)rr_replayed_pulls);
         rr_mode = RR_OFF;
+    }
+}
+
+/* ----------------------- device->RAM DMA (Inc 4) -------------------------- */
+/* RECORD: a device wrote guest RAM (DMA) outside CPU context. Logged as a
+ * RR_SKIPPED_CALL: instr_count|kind|callsite|addr(8)|len(4)|bytes(len). */
+void rr_record_dma_write(uint64_t addr, const uint8_t *buf, uint32_t len)
+{
+    uint64_t ic;
+    uint8_t k = (uint8_t)RR_SKIPPED_CALL, cs = 0;
+    if (!rr_nondet_log || len == 0) {
+        return;
+    }
+    ic = rr_get_guest_instr_count();
+    fwrite(&ic, sizeof(ic), 1, rr_nondet_log);
+    fwrite(&k, 1, 1, rr_nondet_log);
+    fwrite(&cs, 1, 1, rr_nondet_log);
+    fwrite(&addr, sizeof(addr), 1, rr_nondet_log);
+    fwrite(&len, sizeof(len), 1, rr_nondet_log);
+    fwrite(buf, len, 1, rr_nondet_log);
+}
+
+/* REPLAY: apply any recorded device->RAM DMA writes due at the current prog
+ * point (devices do not run in replay, so we inject their RAM effects). */
+void rr_replay_apply_dma(void)
+{
+    uint64_t cur = rr_get_guest_instr_count();
+    while (!rr_diverged && rr_idx < rr_nentries) {
+        RR_entry *e = &rr_entries[rr_idx];
+        if (e->kind != RR_SKIPPED_CALL) {
+            break;
+        }
+        if (e->count > cur) {
+            break;
+        }
+        if (e->dma_len) {
+            cpu_physical_memory_write(e->dma_addr, e->dma_buf, e->dma_len);
+        }
+        rr_idx++;
     }
 }
 
