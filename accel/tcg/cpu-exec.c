@@ -883,7 +883,20 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
              * True when it is, and we should restart on a new TB,
              * and via longjmp via cpu_loop_exit.
              */
-            if (rr_in_record()) {
+            if (rr_in_record() &&
+                (!tcg_ops->need_replay_interrupt ||
+                 tcg_ops->need_replay_interrupt(interrupt_request))) {
+                /*
+                 * Only record interrupts that need replay -- mirror QEMU's own
+                 * need_replay_interrupt() gate (line below). In particular this
+                 * EXCLUDES CPU_INTERRUPT_POLL: POLL is a virtual event that
+                 * apic_poll_irq() converts into a real (HARD) interrupt at the
+                 * SAME instruction count, so recording it produced two log
+                 * entries at one count -- replay injects one per cpu_handle_
+                 * interrupt call, the guest advances 1 insn, and the second is
+                 * stranded (interrupt-landing overshoot -> divergence). The
+                 * resulting HARD interrupt is recorded on its own iteration.
+                 */
                 rr_record_interrupt_request(interrupt_request);
             }
             if (tcg_ops->cpu_exec_interrupt(cpu, interrupt_request)) {

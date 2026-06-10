@@ -756,29 +756,21 @@ int apic_accept_pic_intr(APICCommonState *s)
 
 static void apic_timer_update(APICCommonState *s, int64_t current_time)
 {
+    if (rr_in_replay()) {
+        /*
+         * Model A: do NOT run the LAPIC timer live in replay at all. All
+         * interrupts (incl. the timer's) are injected from the nondet log at
+         * their recorded delivery instruction-counts, and TMCCT reads are
+         * replayed from the log. A halted vCPU is woken from the log via
+         * x86_cpu_has_work()/rr_replay_interrupt_due() (the recorded wake
+         * interrupt is tagged with the halt's frozen count). Running the timer
+         * live only introduces nondeterministic delivery that races the log.
+         */
+        timer_del(s->timer);
+        return;
+    }
     if (apic_next_timer(s, current_time)) {
-        int64_t when = s->next_time;
-        if (rr_in_replay()) {
-            /*
-             * RR: in replay the LAPIC timer's interrupt *delivery* is masked
-             * (interrupts are injected from the nondet log at recorded instr
-             * counts; TMCCT reads are replayed from the log too). The timer's
-             * only remaining job is to periodically kick the vCPU so a halted
-             * (HLT) CPU is re-checked against the log and woken. So ignore the
-             * guest's programmed period entirely and run a FIXED fast heartbeat:
-             *  - not too fast (a tiny TMICT reload otherwise fires faster than
-             *    the slow no-chaining replay vCPU advances -> BQL starvation /
-             *    livelock/hang), and
-             *  - not too slow (a normal ~ms tick period makes every guest HLT
-             *    wait that long for a kick -> idle-heavy replays crawl).
-             * 100us balances both. Determinism-neutral: firing RATE does not
-             * affect guest-visible state, only WHEN the halt is re-checked, and
-             * the recorded wake interrupt is tagged with the halt's frozen
-             * instruction count so a late kick still injects at the right point.
-             */
-            when = current_time + 100000; /* fixed 100us kick heartbeat */
-        }
-        timer_mod(s->timer, when);
+        timer_mod(s->timer, s->next_time);
     } else {
         timer_del(s->timer);
     }

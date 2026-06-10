@@ -444,6 +444,19 @@ void rr_replay_set_interrupt_request(void *cpu_)
     cpu->interrupt_request = v;
 }
 
+/* REPLAY: is the next unconsumed log entry an interrupt due at the current prog
+ * point? Used to wake a halted vCPU deterministically from the log (no live
+ * timer in Model A); the recorded wake interrupt is tagged with the halt's
+ * frozen instruction count. */
+int rr_replay_interrupt_due(void)
+{
+    if (rr_diverged || rr_idx >= rr_nentries) {
+        return 0;
+    }
+    return rr_entries[rr_idx].kind == RR_INTERRUPT_REQUEST &&
+           rr_entries[rr_idx].count == rr_get_guest_instr_count();
+}
+
 /* Instructions to execute before the next recorded interrupt boundary. */
 uint64_t rr_num_instr_before_next_interrupt(void)
 {

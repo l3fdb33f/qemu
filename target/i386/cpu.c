@@ -37,6 +37,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/i386/topology.h"
 #include "exec/watchpoint.h"
+#include "exec/rr_record.h"
 #ifndef CONFIG_USER_ONLY
 #include "confidential-guest.h"
 #include "system/reset.h"
@@ -10355,6 +10356,15 @@ int x86_cpu_pending_interrupt(CPUState *cs, int interrupt_request)
 
 static bool x86_cpu_has_work(CPUState *cs)
 {
+    /*
+     * Model A replay: no live LAPIC timer, so a HLT'd vCPU would never be
+     * kicked. Wake it from the log: report work when the next recorded entry
+     * is an interrupt due at the current (frozen) instruction count, so the
+     * halt is left and cpu_handle_interrupt injects the recorded interrupt.
+     */
+    if (rr_in_replay() && rr_replay_interrupt_due()) {
+        return true;
+    }
     return x86_cpu_pending_interrupt(cs, cs->interrupt_request) != 0;
 }
 #endif /* !CONFIG_USER_ONLY */
