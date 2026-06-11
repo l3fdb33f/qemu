@@ -32,6 +32,7 @@
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
 #include "exec/cpu-common.h"
+#include "exec/rr_record.h"
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-rr.h"
@@ -110,6 +111,17 @@ static void rr_wait_io_event(void)
     CPUState *cpu;
 
     while (all_cpu_threads_idle()) {
+        /*
+         * RR replay: the recording can end with the guest idle (HLT at the
+         * login prompt), so replay reaches the final recorded instruction count
+         * and then HALTS -- it never re-enters cpu_exec_loop (the scheduler
+         * parks it here), so the loop's rr_replay_finished() check can't fire.
+         * Detect completion at the park point so replay reliably reports done
+         * instead of sleeping forever.
+         */
+        if (rr_in_replay() && rr_replay_finished()) {
+            rr_replay_mark_complete();
+        }
         rr_stop_kick_timer();
         qemu_cond_wait_bql(first_cpu->halt_cond);
     }
