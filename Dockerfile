@@ -102,8 +102,8 @@ python3-setuptools
 python3-wheel
 
 # pypanda test dependencies
-gcc-multilib
-libc6-dev-i386
+# gcc-multilib / libc6-dev-i386: x86 32-bit multilib, unavailable on arm64 and
+# unneeded for an x86_64-softmmu-only core build (no i386 target / 32-bit tests).
 nasm
 
 # Qemu build deps
@@ -173,6 +173,15 @@ RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $(cat /tmp/build_dep.txt | grep -o '^[^#]*') && \
     apt-get clean
 
+# 32-bit multilib (gcc-multilib/libc6-dev-i386, for pypanda 32-bit test binaries)
+# is amd64-only -- not available on arm64. Install it conditionally so the build
+# works on both hosts (kept out of the shared dep list above for that reason).
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get -qq update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-multilib libc6-dev-i386 && \
+        apt-get clean; \
+    fi
+
 # Build and install panda
 # Copy repo root directory to /panda, note we explicitly copy in .git directory
 # Note .dockerignore file keeps us from copying things we don't need
@@ -202,13 +211,25 @@ RUN apt-get install -y gdb && \
     python3 -m pip install cffi tree-sitter==0.24.0 tree-sitter-c==0.23.0
 
 RUN git clone https://github.com/panda-re/libpanda-ng /libpanda-ng && \
+    if [ "$(uname -m)" = "aarch64" ]; then \
+        : "On an arm64 host the libpanda .so has arm64-host DWARF, but build.py" \
+        : "hardcodes the x86_64 host (tcg/x86_64, host/include/x86_64) and the" \
+        : "x86-only -m64 flag. Point it at the arm64 host backend so the host" \
+        : "register types (user_regs_struct, etc.) match. Target types (the" \
+        : "plugin ABI) are host-agnostic. On amd64 the upstream paths are correct." ; \
+        sed -i 's/ -m64//g; s#"tcg/x86_64"#"tcg/aarch64"#; s#host/include/x86_64/#host/include/aarch64/#' /libpanda-ng/build.py; \
+    fi && \
     mkdir /libpanda-ng/build && cd /libpanda-ng/build && \
     bash /libpanda-ng/run_all.sh /panda
 
 # this layer is used to strip shared objects and change python data to be
 # symlinks to the installed panda data directory
 FROM installer AS cleanup
-RUN find /usr/local/lib/x86_64-linux-gnu -name "*.so" -exec strip {} \;
+# Host multiarch triplet (x86_64-linux-gnu on amd64, aarch64-linux-gnu on arm64).
+# Stage the installed libs at a fixed path so the packager COPY is arch-agnostic.
+RUN MULTIARCH=$(gcc -dumpmachine) && \
+    find /usr/local/lib/$MULTIARCH -name "*.so" -exec strip {} \; && \
+    mkdir -p /panda-libs && cp -a /usr/local/lib/$MULTIARCH/. /panda-libs/
 RUN strip /panda/build/contrib/plugins/libpanda_plugin_interface.so
 RUN mkdir -p /usr/include/panda-ng
 COPY --from=libgen /libpanda-ng/build/* /usr/include/panda-ng
@@ -221,7 +242,7 @@ RUN apt-get -qq update && \
         fakeroot dpkg-dev
 
 # Set up /package-root with files from panda we'll package
-COPY --from=cleanup /usr/local/lib/x86_64-linux-gnu /package-root/usr/local/lib/panda
+COPY --from=cleanup /panda-libs /package-root/usr/local/lib/panda
 COPY --from=cleanup /usr/local/share/qemu /package-root/usr/local/share/panda
 RUN mkdir -p /package-root/usr/local/lib/panda/contrib/plugins /package-root/DEBIAN/
 COPY --from=cleanup  /panda/build/contrib/plugins/libpanda_plugin_interface.so /package-root/usr/local/lib/panda/contrib/plugins
