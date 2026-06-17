@@ -1031,6 +1031,27 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 rr_replay_apply_dma();
                 if (rr_replay_finished()) {
                     rr_replay_mark_complete();
+                } else if (!(s.cflags & CF_MEMI_ONLY) &&
+                           rr_replay_interrupt_due()) {
+                    /*
+                     * rr_replay_apply_dma() just consumed one or more
+                     * SKIPPED_CALL (device->RAM DMA) entries and advanced rr_idx
+                     * onto an interrupt due at THIS exact instruction count.
+                     * macOS posts such a DMA write at the same count as its
+                     * completion interrupt; Alpine never did (its disk DMA used
+                     * the zero-copy path, so nothing was captured here). The
+                     * iteration's cpu_handle_interrupt() already ran at the top
+                     * while rr_idx still pointed at the SKIPPED_CALL, so the
+                     * interrupt was NOT injected. Executing any instruction now
+                     * advances the prog point past the recorded count, the
+                     * injection condition (e->count == cur) can never match
+                     * again, the interrupt is stranded, and replay diverges by
+                     * one instruction. Loop back to cpu_handle_interrupt to
+                     * inject it before executing. cflags_next_tb is already -1
+                     * here, so the next pass cannot early-return on CF_NOIRQ ->
+                     * no infinite loop.
+                     */
+                    continue;
                 } else if (s.cflags & CF_MEMI_ONLY) {
                     /*
                      * cpu_io_recompile() requested a narrowed TB to isolate an
