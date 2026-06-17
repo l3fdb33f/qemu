@@ -43,4 +43,16 @@ int  rr_replay_interrupt_due(void);
 void rr_record_dma_write(uint64_t addr, const uint8_t *buf, uint32_t len);
 void rr_replay_apply_dma(void);
 
+/* Bounded recording: instruction-count cap for tractable RR debugging.
+ * 0 = unbounded (classic stop/end_record behavior). When >0, set BEFORE
+ * begin_record; recording auto-finalizes (writes END_OF_LOG, backpatches the
+ * final count, closes the log, rr_mode->RR_OFF) once the guest instruction
+ * count reaches the cap. rr_record_check_bound() is the per-TB hook called
+ * from the cpu-exec loop; it runs on the vCPU thread where capture hooks also
+ * run, so there is no concurrent writer to the nondet log. */
+void rr_record_set_until(uint64_t count);
+uint64_t rr_record_get_until(void);
+int  rr_record_bounded_done(void);
+void rr_record_check_bound(void);
+
 #endif /* EXEC_RR_RECORD_H */

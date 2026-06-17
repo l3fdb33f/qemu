@@ -329,9 +329,9 @@ ERST
 
     {
         .name       = "begin_record",
-        .args_type  = "filename:s",
-        .params     = "filename",
-        .help       = "begin PANDA record/replay recording to <filename>-rr-{snp,nondet.log}",
+        .args_type  = "filename:s,count:l?",
+        .params     = "filename [count]",
+        .help       = "begin PANDA recording to <filename>-rr-{snp,nondet.log}; optional instruction-count cap auto-stops recording",
         .cmd        = hmp_begin_record,
     },
     {

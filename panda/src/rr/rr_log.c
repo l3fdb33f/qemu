@@ -115,6 +115,8 @@ static RR_entry *rr_entries;
 static size_t    rr_nentries;
 static size_t    rr_idx;
 static uint64_t  rr_final_count;
+static uint64_t  rr_record_until;   /* bounded record cap (0 = unbounded) */
+static int       rr_record_done;    /* set once a bounded record auto-finalized */
 static int       rr_diverged;
 static int       rr_div_reported;
 static uint64_t  rr_replayed_pulls;
@@ -283,6 +285,46 @@ int rr_replay_finished(void)
 }
 
 
+/* Write END_OF_LOG, backpatch the final guest instruction count into the
+ * reserved 8-byte header, close the nondet log, and leave RR. Shared by the
+ * HMP end_record path and the bounded auto-finalize. Callers must guarantee no
+ * concurrent capture (HMP path quiesces via vm_stop; bounded path runs on the
+ * vCPU thread between TBs, where capture hooks cannot be mid-write). */
+static void rr_finish_record_log(void)
+{
+    uint64_t final_count = rr_get_guest_instr_count();
+    rr_write_entry_header(RR_END_OF_LOG);
+    if (fseek(rr_nondet_log, 0, SEEK_SET) == 0) {
+        fwrite(&final_count, sizeof(final_count), 1, rr_nondet_log);
+    }
+    fclose(rr_nondet_log);
+    rr_nondet_log = NULL;
+    rr_mode = RR_OFF;
+}
+
+void rr_record_set_until(uint64_t count) { rr_record_until = count; }
+uint64_t rr_record_get_until(void)       { return rr_record_until; }
+int rr_record_bounded_done(void)         { return rr_record_done; }
+
+/* Per-TB hook (cpu-exec loop): when a cap is armed, auto-finalize the recording
+ * the moment the guest instruction count crosses it. Granularity is one TB
+ * (we may finalize a few instrs past the cap) which is fine for a debug bound. */
+void rr_record_check_bound(void)
+{
+    uint64_t cur;
+    if (rr_mode != RR_RECORD || rr_record_until == 0) {
+        return;
+    }
+    cur = rr_get_guest_instr_count();
+    if (cur < rr_record_until) {
+        return;
+    }
+    rr_finish_record_log();   /* sets rr_mode = RR_OFF */
+    rr_record_done = 1;
+    info_report("RR: bounded record complete at %llu guest instrs (cap %llu)",
+                (unsigned long long)cur, (unsigned long long)rr_record_until);
+}
+
 int rr_do_begin_record(const char *name)
 {
     Error *err = NULL;
@@ -320,6 +362,7 @@ int rr_do_begin_record(const char *name)
     fwrite(&reserved, sizeof(reserved), 1, rr_nondet_log);
 
     rr_reset_count();
+    rr_record_done = 0;
     rr_mode = RR_RECORD;
     vm_start();
     return 0;
@@ -327,8 +370,6 @@ int rr_do_begin_record(const char *name)
 
 int rr_do_end_record(void)
 {
-    uint64_t final_count;
-
     if (rr_mode != RR_RECORD) {
         error_report("RR: not recording");
         return -1;
@@ -337,16 +378,7 @@ int rr_do_end_record(void)
      * while we close the nondet log on the main-loop thread (avoids UAF). */
     vm_stop(RUN_STATE_SAVE_VM);
 
-    final_count = rr_get_guest_instr_count();
-    rr_write_entry_header(RR_END_OF_LOG);
-
-    /* Backpatch the final guest instruction count into the reserved header. */
-    if (fseek(rr_nondet_log, 0, SEEK_SET) == 0) {
-        fwrite(&final_count, sizeof(final_count), 1, rr_nondet_log);
-    }
-    fclose(rr_nondet_log);
-    rr_nondet_log = NULL;
-    rr_mode = RR_OFF;
+    rr_finish_record_log();
     vm_start();
     return 0;
 }
@@ -524,9 +556,17 @@ void rr_replay_apply_dma(void)
 void hmp_begin_record(Monitor *mon, const QDict *qdict)
 {
     const char *name = qdict_get_str(qdict, "filename");
+    uint64_t count = qdict_get_try_int(qdict, "count", 0);
+    rr_record_set_until(count);
     if (rr_do_begin_record(name) == 0) {
-        monitor_printf(mon, "RR: recording to %s-rr-snp + %s-rr-nondet.log\n",
-                       name, name);
+        if (count) {
+            monitor_printf(mon, "RR: recording to %s-rr-snp + %s-rr-nondet.log "
+                           "(auto-stop at %llu guest instrs)\n", name, name,
+                           (unsigned long long)count);
+        } else {
+            monitor_printf(mon, "RR: recording to %s-rr-snp + %s-rr-nondet.log\n",
+                           name, name);
+        }
     } else {
         monitor_printf(mon, "RR: begin_record failed\n");
     }

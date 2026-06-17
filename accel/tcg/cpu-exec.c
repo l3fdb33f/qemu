@@ -1025,7 +1025,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             }
 
 #ifndef CONFIG_USER_ONLY
-            if (rr_in_replay()) {
+            if (rr_in_record()) {
+                rr_record_check_bound();
+            } else if (rr_in_replay()) {
                 rr_replay_apply_dma();
                 if (rr_replay_finished()) {
                     rr_replay_mark_complete();
