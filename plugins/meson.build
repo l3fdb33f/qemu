@@ -26,7 +26,10 @@ printf '_panda_*\n_ppp_*\n_rr_*\n_pandalog*\n_pcb_*\n'
       output: 'qemu-plugins-ld64.symbols',
       capture: true,
       command: ['sh', '-c', panda_ld64_syms, '@INPUT@'])
-    emulator_link_args += ['-Wl,-exported_symbols_list,plugins/qemu-plugins-ld64.symbols']
+    # Apply the ld64 allowlist to the qemu executable ONLY (emulator_export_only_args),
+    # NOT to libpanda — libpanda must export all of its globals so the plugin
+    # dylibs and pandare2 can resolve panda_*/ppp_*/rr_*/qemu_* internals at load.
+    emulator_export_only_args += ['-Wl,-exported_symbols_list,plugins/qemu-plugins-ld64.symbols']
   elif host_os == 'windows' and meson.get_compiler('c').get_id() == 'clang'
     # LLVM/lld does not support exporting specific symbols. However, it works
     # out of the box with dllexport/dllimport attribute we set in the code.

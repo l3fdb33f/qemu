@@ -800,6 +800,13 @@ coref = []
 iokit = []
 pvg = not_found
 emulator_link_args = []
+# PANDBox macOS port: link args applied ONLY to the qemu executable, not to
+# libpanda. On macOS the ld64 -exported_symbols_list is a restrictive allowlist;
+# applying it to libpanda hides every qemu/panda internal the plugin dylibs and
+# pandare2 resolve at load. The qemu executable wants the allowlist (it only
+# exports the qemu_plugin API to in-process plugins); libpanda must export all
+# of its globals, matching its behavior on Linux.
+emulator_export_only_args = []
 midl = not_found
 widl = not_found
 pathcch = not_found
@@ -4411,7 +4418,7 @@ foreach target : target_dirs
                dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_depends: [block_syms, qemu_syms],
-               link_args: link_args,
+               link_args: link_args + emulator_export_only_args,
                win_subsystem: exe['win_subsystem'])
     
     emulator = shared_library('panda-' + target, exe['sources'],
