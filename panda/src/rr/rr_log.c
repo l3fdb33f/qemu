@@ -43,9 +43,11 @@ static void rr_write_entry_header(RR_log_entry_kind kind)
     uint64_t ic = rr_get_guest_instr_count();
     uint8_t k = (uint8_t)kind;
     uint8_t cs = 0;
+    flockfile(rr_nondet_log);
     fwrite(&ic, sizeof(ic), 1, rr_nondet_log);
     fwrite(&k,  sizeof(k),  1, rr_nondet_log);
     fwrite(&cs, sizeof(cs), 1, rr_nondet_log);
+    funlockfile(rr_nondet_log);
 }
 
 
@@ -61,12 +63,17 @@ static void rr_log_write(RR_log_entry_kind kind, const void *data, size_t n)
     }
     ic = rr_get_guest_instr_count();
     k = (uint8_t)kind;
+    /* Whole entry under the FILE lock: device-DMA capture can run on a different
+     * context than the vCPU capture; per-field fwrites would otherwise interleave
+     * and corrupt the log. */
+    flockfile(rr_nondet_log);
     fwrite(&ic, sizeof(ic), 1, rr_nondet_log);
     fwrite(&k,  sizeof(k),  1, rr_nondet_log);
     fwrite(&cs, sizeof(cs), 1, rr_nondet_log);
     if (n) {
         fwrite(data, n, 1, rr_nondet_log);
     }
+    funlockfile(rr_nondet_log);
 }
 
 void rr_record_input_1(uint8_t v)  { rr_log_write(RR_INPUT_1, &v, sizeof(v)); }
@@ -246,12 +253,45 @@ static int rr_replay_pull(uint8_t kind, uint64_t *out)
     if (rr_diverged) {
         return -1;
     }
+    cur = rr_get_guest_instr_count();
+    /* Same-count SKIPPED_CALL/input ordering. A device DMA (SKIPPED_CALL) and a
+     * CPU input read can share an instruction count, with the SKIP recorded
+     * first. The DMA can only be applied at a loop-top (a mid-TB RAM write can
+     * invalidate the running TB), but its order vs a same-count input is
+     * immaterial -- the DMA lands at the same count either way. If a run of
+     * same-count SKIPs blocks the matching input, rotate the input ahead of them
+     * so the pull consumes it now; the SKIPs still apply at the next loop-top
+     * (apply_dma drains count<=cur). */
+    if (rr_idx < rr_nentries && rr_entries[rr_idx].kind == RR_SKIPPED_CALL) {
+        size_t j = rr_idx;
+        while (j < rr_nentries && rr_entries[j].kind == RR_SKIPPED_CALL &&
+               rr_entries[j].count <= cur) {
+            j++;
+        }
+        if (j < rr_nentries && rr_entries[j].kind == kind &&
+            rr_entries[j].count == cur) {
+            RR_entry input = rr_entries[j];
+            size_t k;
+            for (k = j; k > rr_idx; k--) {
+                rr_entries[k] = rr_entries[k - 1];
+            }
+            rr_entries[rr_idx] = input;
+            /* Keep the parallel next-interrupt-count array consistent: all the
+             * rotated entries [rr_idx..j] are at the same count (cur), and each
+             * is now followed by a same-count SKIP boundary (or is one), so the
+             * next boundary for every one of them is cur. */
+            if (rr_next_int_count) {
+                for (k = rr_idx; k <= j; k++) {
+                    rr_next_int_count[k] = cur;
+                }
+            }
+        }
+    }
     if (rr_idx >= rr_nentries) {
         rr_report_divergence("log exhausted on pull", kind);
         return -1;
     }
     e = &rr_entries[rr_idx];
-    cur = rr_get_guest_instr_count();
     if (e->kind != kind || e->count != cur) {
         rr_report_divergence("pull kind/count mismatch", kind);
         return -1;
@@ -523,12 +563,14 @@ void rr_record_dma_write(uint64_t addr, const uint8_t *buf, uint32_t len)
         return;
     }
     ic = rr_get_guest_instr_count();
+    flockfile(rr_nondet_log);
     fwrite(&ic, sizeof(ic), 1, rr_nondet_log);
     fwrite(&k, 1, 1, rr_nondet_log);
     fwrite(&cs, 1, 1, rr_nondet_log);
     fwrite(&addr, sizeof(addr), 1, rr_nondet_log);
     fwrite(&len, sizeof(len), 1, rr_nondet_log);
     fwrite(buf, len, 1, rr_nondet_log);
+    funlockfile(rr_nondet_log);
 }
 
 /* REPLAY: apply any recorded device->RAM DMA writes due at the current prog
