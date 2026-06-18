@@ -1,0 +1,61 @@
+name: Fork release (.deb + libpanda-ng)
+
+# Adapted from publish_docker.yml for the l3fdb33f fork: builds the packaging
+# Dockerfile (x86_64-softmmu only, for a tractable GitHub-hosted build) and
+# publishes pandare_22.04.deb + libpanda-ng.tar.gz to a GitHub Release.
+# Trigger manually (workflow_dispatch) or by pushing a fork_* tag.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish"
+        required: true
+        default: "fork_dev_1"
+  push:
+    tags:
+      - "fork_*"
+
+jobs:
+  build_deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build packager image (x86_64-softmmu only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}
+          target: packager
+          load: true
+          tags: packager
+          build-args: |
+            TARGET_LIST=x86_64-softmmu
+
+      - name: Extract .deb + libpanda-ng headers
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD/out:/out" packager \
+            bash -c "cp /pandare.deb /libpanda-ng.tar.gz /out"
+          mv out/pandare.deb out/pandare_22.04.deb
+          ls -la out
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            panda-ng qemu core (l3fdb33f/qemu) fork build.
+            - pandare_22.04.deb : qemu core + libpanda (x86_64-softmmu)
+            - libpanda-ng.tar.gz : panda-ng plugin headers
+          files: |
+            out/pandare_22.04.deb
+            out/libpanda-ng.tar.gz
