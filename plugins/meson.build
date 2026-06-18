@@ -11,11 +11,21 @@ qemu_plugin_symbols = configure_file(
 # Modules need more symbols than just those in plugins/qemu-plugins.symbols
 if not enable_modules
   if host_os == 'darwin'
+    # PANDBox macOS port: the ld64 -exported_symbols_list is an allowlist, so
+    # symbols not listed are demoted to local. Upstream only lists qemu_* which
+    # hides the panda API — but libpanda (the pypanda/pandare2 shared object) and
+    # the plugin dylibs both resolve panda_*/ppp_*/rr_* from libpanda at load
+    # time. Append those wildcards so they stay exported on macOS, matching the
+    # export-all behavior libpanda gets on Linux. (Over-exporting from the qemu
+    # executable is harmless.)
+    panda_ld64_syms = '''sed -ne 's/^[[:space:]]*\(qemu_.*\);/_\1/p' "$0"
+printf '_panda_*\n_ppp_*\n_rr_*\n_pandalog*\n_pcb_*\n'
+'''
     configure_file(
       input: qemu_plugin_symbols,
       output: 'qemu-plugins-ld64.symbols',
       capture: true,
-      command: ['sed', '-ne', 's/^[[:space:]]*\\(qemu_.*\\);/_\\1/p', '@INPUT@'])
+      command: ['sh', '-c', panda_ld64_syms, '@INPUT@'])
     emulator_link_args += ['-Wl,-exported_symbols_list,plugins/qemu-plugins-ld64.symbols']
   elif host_os == 'windows' and meson.get_compiler('c').get_id() == 'clang'
     # LLVM/lld does not support exporting specific symbols. However, it works

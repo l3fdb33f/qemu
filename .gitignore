@@ -20,3 +20,6 @@ GTAGS
 *.swp
 *.patch
 *.gcov
+
+# macOS arm64 native build dir (PANDBox port)
+build-mac/
