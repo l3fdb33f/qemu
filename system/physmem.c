@@ -3251,6 +3251,14 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, true);
 
+        if (rr_in_replay() && !current_cpu) {
+            /* Device DMA to RAM in replay is nondeterministically timed;
+             * suppress the live write. rr_replay_apply_dma() re-applies the
+             * recorded bytes at the recorded instruction count. The replay
+             * re-apply and CPU stores run with current_cpu set, so they fall
+             * through and write normally. */
+            return MEMTX_OK;
+        }
         memmove(ram_ptr, buf, *l);
         invalidate_and_set_dirty(mr, mr_addr, *l);
 
@@ -3259,6 +3267,11 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
 }
 
 /* Called within RCU critical section.  */
+/* Set while writing a captured device-DMA bounce buffer back to guest RAM in
+ * record, so the flatview capture hook below doesn't double-log the same DMA.
+ * Thread-local: the write-back is synchronous on the same thread. */
+static __thread bool rr_dma_in_writeback;
+
 static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
                                            MemTxAttrs attrs,
                                            const void *ptr,
@@ -3272,7 +3285,7 @@ static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
         result |= flatview_write_continue_step(attrs, buf, len, mr_addr, &l,
                                                mr);
 
-        if (rr_in_record() && !current_cpu &&
+        if (rr_in_record() && !current_cpu && !rr_dma_in_writeback &&
             memory_access_is_direct(mr, true, attrs)) {
             rr_record_dma_write((uint64_t)addr, buf, (uint32_t)l);
         }
@@ -3708,7 +3721,8 @@ void *address_space_map(AddressSpace *as,
     fv = address_space_to_flatview(as);
     mr = flatview_translate(fv, addr, &xlat, &l, is_write, attrs);
 
-    if (!memory_access_is_direct(mr, is_write, attrs)) {
+    if (!memory_access_is_direct(mr, is_write, attrs) ||
+        (is_write && rr_on())) {
         size_t used = qatomic_read(&as->bounce_buffer_size);
         for (;;) {
             hwaddr alloc = MIN(as->max_bounce_buffer_size - used, l);
@@ -3777,8 +3791,16 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
     assert(bounce->magic == BOUNCE_BUFFER_MAGIC);
 
     if (is_write) {
-        address_space_write(as, bounce->addr, MEMTXATTRS_UNSPECIFIED,
-                            bounce->buffer, access_len);
+        if (rr_in_record()) {
+            rr_record_dma_write((uint64_t)bounce->addr, bounce->buffer,
+                                (uint32_t)access_len);
+        }
+        if (!rr_in_replay()) {
+            rr_dma_in_writeback = true;
+            address_space_write(as, bounce->addr, MEMTXATTRS_UNSPECIFIED,
+                                bounce->buffer, access_len);
+            rr_dma_in_writeback = false;
+        }
     }
 
     qatomic_sub(&as->bounce_buffer_size, bounce->len);
