@@ -210,15 +210,7 @@ FROM builder AS libgen
 RUN apt-get install -y gdb && \
     python3 -m pip install cffi tree-sitter==0.24.0 tree-sitter-c==0.23.0
 
-RUN git clone https://github.com/panda-re/libpanda-ng /libpanda-ng && \
-    if [ "$(uname -m)" = "aarch64" ]; then \
-        : "On an arm64 host the libpanda .so has arm64-host DWARF, but build.py" \
-        : "hardcodes the x86_64 host (tcg/x86_64, host/include/x86_64) and the" \
-        : "x86-only -m64 flag. Point it at the arm64 host backend so the host" \
-        : "register types (user_regs_struct, etc.) match. Target types (the" \
-        : "plugin ABI) are host-agnostic. On amd64 the upstream paths are correct." ; \
-        sed -i 's/ -m64//g; s#"tcg/x86_64"#"tcg/aarch64"#; s#host/include/x86_64/#host/include/aarch64/#' /libpanda-ng/build.py; \
-    fi && \
+RUN git clone https://github.com/l3fdb33f/libpanda-ng /libpanda-ng && \
     mkdir /libpanda-ng/build && cd /libpanda-ng/build && \
     bash /libpanda-ng/run_all.sh /panda
 
