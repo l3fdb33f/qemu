@@ -608,6 +608,19 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
      */
     cpu->cflags_next_tb = curr_cflags(cpu) | CF_MEMI_ONLY | CF_NOIRQ | n;
 
+    /*
+     * PANDA RR: the recompiled TB re-executes n instructions (the I/O insn, +1
+     * for a replayed branch delay slot), re-running the per-instruction
+     * rr_guest_instr_count increment injected by the translator. cpu_restore_
+     * state_from_tb() above restores guest arch state but NOT this custom
+     * counter, so those n instructions would be counted twice. Compensate.
+     * Without this the prog-point clock drifts by 1 whenever io_recompile fires
+     * in record (I/O insn mid-TB) but not in replay (the interrupt/SKIP clamp
+     * single-steps near boundaries, so the I/O insn is last-in-TB and needs no
+     * recompile) -> record/replay instruction-count divergence.
+     */
+    cpu->rr_guest_instr_count -= n;
+
     if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
         vaddr pc = cpu->cc->get_pc(cpu);
         if (qemu_log_in_addr_range(pc)) {
