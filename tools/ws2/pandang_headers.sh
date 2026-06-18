@@ -22,7 +22,7 @@ fi
 echo "=== [$(date)] run_all.sh (gdb type extraction) ==="
 rm -rf ~/libpanda-ng/build && mkdir -p ~/libpanda-ng/build
 cd ~/libpanda-ng/build
-bash ~/libpanda-ng/run_all.sh ~/panda-ng || { echo "HEADERGEN_FAIL"; echo FAIL > "$SENT"; exit 1; }
+bash ~/libpanda-ng/run_all.sh ~/qemu || { echo "HEADERGEN_FAIL"; echo FAIL > "$SENT"; exit 1; }
 
 echo "=== [$(date)] DONE ==="
 echo "--- generated headers ---"

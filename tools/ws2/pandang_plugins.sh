@@ -8,7 +8,7 @@ SENT=~/pandang_plugins.sentinel
 rm -f "$SENT"
 exec > "$LOG" 2>&1
 
-PLUGREPO=~/panda-ng-plugins
+PLUGREPO=~/panda-ng
 
 echo "=== [$(date)] install meson + pycparser (pip --user) ==="
 python3 -m pip install --user --break-system-packages meson pycparser 2>&1 | tail -3

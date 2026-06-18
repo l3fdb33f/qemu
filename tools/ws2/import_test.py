@@ -1,14 +1,14 @@
 import sys, os
-sys.path.insert(0, os.path.expanduser("~/panda-ng-plugins/python/core"))
+sys.path.insert(0, os.path.expanduser("~/panda-ng/python/core"))
 try:
     from pandare2 import Panda
     print("IMPORT_OK")
 except Exception as e:
     import traceback; traceback.print_exc(); print("IMPORT_FAIL"); sys.exit(1)
 
-NG = os.path.expanduser("~/panda-ng/build")
+NG = os.path.expanduser("~/qemu/build")
 ISO = os.path.expanduser("~/alpine-virt.iso")
-PLUG = os.path.expanduser("~/panda-ng-plugins/build/plugins")
+PLUG = os.path.expanduser("~/panda-ng/build/plugins")
 try:
     panda = Panda(
         arch="x86_64",

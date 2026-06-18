@@ -3,15 +3,16 @@
 # mode (CPL=0) so kernel text (0xffffff80...) is mapped in the active CR3, then
 # disassemble the TSC poll loop.
 set -uo pipefail
-cd "$HOME/macos"
-L="$HOME/macos/mac_launch.log"; MON="$HOME/macos/mac_mon.sock"; RR="$HOME/macos/rr/m1"
-SENT="$HOME/macos/mac_disas.sentinel"
-rm -f "$SENT"; exec > "$HOME/macos/mac_disas.log" 2>&1
-T(){ python3 "$HOME/panda-ng/tools/macos/mon.py" "$MON" "$1" 2>/dev/null; }
+source "$(cd "$(dirname "$0")/../.." && pwd)/tools/macos/rr_env.sh"
+cd "$MACVM"
+L="$MACVM/mac_launch.log"; MON="$MACVM/mac_mon.sock"; RR="$MACVM/rr/m1"
+SENT="$MACVM/mac_disas.sentinel"
+rm -f "$SENT"; exec > "$MACVM/mac_disas.log" 2>&1
+T(){ python3 "$MON_PY" "$MON" "$1" 2>/dev/null; }
 
 pkill -9 -f qemu-system-x86_64 2>/dev/null; sleep 2
 rm -f "$L" mac_serial.log "$MON"
-screen -dmS mac bash -c "$HOME/macos/mac_run.sh tcg > $L 2>&1"
+screen -dmS mac bash -c "$MACVM/mac_run.sh tcg > $L 2>&1"
 for i in $(seq 1 60); do [ -S "$MON" ] && break; sleep 1; done
 sleep 3
 echo "monitor up after ~${i}s"

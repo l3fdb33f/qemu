@@ -5,7 +5,7 @@ set -e
 cd "$HOME/macos"
 OC="OSX-KVM/OpenCore/OpenCore.qcow2"
 RAW=/tmp/ocr.raw; PL=/tmp/ocr.plist
-QIMG="$HOME/panda-ng/build/qemu-img"
+QIMG="$HOME/qemu/build/qemu-img"
 "$QIMG" convert -O raw "$OC" "$RAW"
 mcopy -o -i "$RAW@@1048576" ::/EFI/OC/config.plist "$PL"
 python3 - "$PL" <<'PY'

@@ -2,19 +2,23 @@
 # Validate the osi_mac plugin live: load osi + osi_mac, boot Monterey under
 # panda-ng (full speed, no per-block cb), then call get_processes in a CPL0 halt.
 import sys, os, time, re
-sys.path.insert(0, os.path.expanduser("~/panda-ng-plugins/python/core"))
+import os, sys
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PANDA_QEMU = os.environ.get("PANDA_QEMU", _REPO)
+PANDA_PLUGINS = os.environ.get("PANDA_PLUGINS", os.path.expanduser("~/panda-ng"))
+MAC = os.environ.get("MACVM", os.path.expanduser("~/macos"))
+NG  = PANDA_QEMU + "/build"
+PLUG = PANDA_PLUGINS + "/build/plugins"
+sys.path.insert(0, PANDA_PLUGINS + "/python/core")
 from pandare2 import Panda
 
-NG  = os.path.expanduser("~/panda-ng/build")
-MAC = os.path.expanduser("~/macos")
-PLUG = os.path.expanduser("~/panda-ng-plugins/build/plugins")
 OSK = "ourhardworkbythesewordsguardedpleasedontsteal(c)AppleComputerInc"
 
 panda = Panda(
     arch="x86_64", mem="4096",
     os_version="darwin-64-monterey", # OS_DARWIN family (added to panda-ng core)
     libpanda_path=os.path.join(NG, "libpanda-x86_64-softmmu.so"),
-    biospath=os.path.expanduser("~/panda-ng/pc-bios"),
+    biospath=PANDA_QEMU + "/pc-bios",
     plugin_path=PLUG,
     extra_args=[
         "-machine", "q35", "-cpu",

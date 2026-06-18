@@ -7,18 +7,19 @@
 # segment for divergence debugging). Then begin_replay, watch for
 # RR REPLAY COMPLETE / RR DIVERGENCE. Output -> ~/macos/mac_rr.log.
 set -uo pipefail
-cd "$HOME/macos"
-L="$HOME/macos/mac_launch.log"; MON="$HOME/macos/mac_mon.sock"; RR="$HOME/macos/rr/m1"
+source "$(cd "$(dirname "$0")/../.." && pwd)/tools/macos/rr_env.sh"
+cd "$MACVM"
+L="$MACVM/mac_launch.log"; MON="$MACVM/mac_mon.sock"; RR="$MACVM/rr/m1"
 TARGET="${1:-5000000}"; WAIT="${2:-1800}"
-SENT="$HOME/macos/mac_rr.sentinel"
-rm -f "$SENT"; exec > "$HOME/macos/mac_rr.log" 2>&1
-T(){ python3 "$HOME/panda-ng/tools/macos/mon.py" "$MON" "$1" 2>/dev/null; }
+SENT="$MACVM/mac_rr.sentinel"
+rm -f "$SENT"; exec > "$MACVM/mac_rr.log" 2>&1
+T(){ python3 "$MON_PY" "$MON" "$1" 2>/dev/null; }
 rrcount(){ T "info rr" | grep -a rr_guest | grep -oE '[0-9]+' | tail -1; }
 
 echo "=== [$(date)] launch qemu under screen ==="
 pkill -9 -f qemu-system-x86_64 2>/dev/null; sleep 2
-rm -f "$L" mac_serial.log "$MON"; rm -rf "$HOME/macos/rr"; mkdir -p "$HOME/macos/rr"
-screen -dmS mac bash -c "$HOME/macos/mac_run.sh tcg > $L 2>&1"
+rm -f "$L" mac_serial.log "$MON"; rm -rf "$MACVM/rr"; mkdir -p "$MACVM/rr"
+screen -dmS mac bash -c "$MACVM/mac_run.sh tcg > $L 2>&1"
 
 echo "=== wait for boot ==="
 for i in $(seq 1 400); do

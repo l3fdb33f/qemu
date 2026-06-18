@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WS-2 native host build bootstrap. Clones our fork to ~/panda-ng (NEVER touches
+# WS-2 native host build bootstrap. Clones our fork to ~/qemu (NEVER touches
 # ~/panda or ~/pandbox) and builds the panda-ng core (x86_64-softmmu).
 set -uo pipefail
 
@@ -9,11 +9,11 @@ rm -f "$SENT"
 exec > "$LOG" 2>&1
 
 echo "=== [$(date)] clone ==="
-if [ ! -d ~/panda-ng/.git ]; then
+if [ ! -d ~/qemu/.git ]; then
     git clone --branch wip/record-replay \
-        https://github.com/l3fdb33f/qemu.git ~/panda-ng || { echo "CLONE_FAIL"; echo FAIL > "$SENT"; exit 1; }
+        https://github.com/l3fdb33f/qemu.git ~/qemu || { echo "CLONE_FAIL"; echo FAIL > "$SENT"; exit 1; }
 fi
-cd ~/panda-ng
+cd ~/qemu
 echo "HEAD: $(git rev-parse --short HEAD) $(git log -1 --format=%s)"
 
 echo "=== [$(date)] configure ==="

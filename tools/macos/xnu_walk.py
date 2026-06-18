@@ -2,10 +2,10 @@
 # Boot Monterey under panda-ng (libpanda) and validate the XNU ISF by walking
 # allproc in kernel context, reading p_pid for each proc.
 import sys, os, struct
-sys.path.insert(0, os.path.expanduser("~/panda-ng-plugins/python/core"))
+sys.path.insert(0, os.path.expanduser("~/panda-ng/python/core"))
 from pandare2 import Panda
 
-NG  = os.path.expanduser("~/panda-ng/build")
+NG  = os.path.expanduser("~/qemu/build")
 MAC = os.path.expanduser("~/macos")
 OSK = "ourhardworkbythesewordsguardedpleasedontsteal(c)AppleComputerInc"
 
@@ -21,7 +21,7 @@ KBASE     = 0xffffff8000000000
 panda = Panda(
     arch="x86_64", mem="4096",
     libpanda_path=os.path.join(NG, "libpanda-x86_64-softmmu.so"),
-    biospath=os.path.expanduser("~/panda-ng/pc-bios"),
+    biospath=os.path.expanduser("~/qemu/pc-bios"),
     extra_args=[
         "-machine", "q35", "-cpu",
         "Penryn,vendor=GenuineIntel,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+aes,+pclmulqdq,+xsave,+xsaveopt",

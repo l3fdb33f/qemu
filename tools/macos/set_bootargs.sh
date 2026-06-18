@@ -6,7 +6,7 @@ cd "$HOME/macos"
 OC="OSX-KVM/OpenCore/OpenCore.qcow2"
 RAW=/tmp/oc_edit.raw
 PL=/tmp/oc_edit.plist
-QIMG="$HOME/panda-ng/build/qemu-img"
+QIMG="$HOME/qemu/build/qemu-img"
 ARGS="$1"
 
 "$QIMG" convert -O raw "$OC" "$RAW"

@@ -1,20 +1,20 @@
 import sys, os, threading, time
-sys.path.insert(0, os.path.expanduser("~/panda-ng-plugins/python/core"))
+sys.path.insert(0, os.path.expanduser("~/panda-ng/python/core"))
 from pandare2 import Panda
 
-NG   = os.path.expanduser("~/panda-ng/build")
+NG   = os.path.expanduser("~/qemu/build")
 ISO  = os.path.expanduser("~/alpine-virt.iso")
-PLUG = os.path.expanduser("~/panda-ng-plugins/build/plugins")
+PLUG = os.path.expanduser("~/panda-ng/build/plugins")
 
 panda = Panda(
     arch="x86_64", mem="1024",
     os_version="linux-64-alpine",
     expect_prompt=rb"localhost:~#",
     libpanda_path=os.path.join(NG, "libpanda-x86_64-softmmu.so"),
-    biospath=os.path.expanduser("~/panda-ng/pc-bios"),
+    biospath=os.path.expanduser("~/qemu/pc-bios"),
     plugin_path=PLUG,
     extra_args=[
-        "-L", os.path.expanduser("~/panda-ng/pc-bios"),
+        "-L", os.path.expanduser("~/qemu/pc-bios"),
         "-accel", "tcg,thread=single",
         "-machine", "pc", "-cpu", "Penryn", "-smp", "1",
         "-drive", f"id=cd0,if=ide,media=cdrom,file={ISO}",

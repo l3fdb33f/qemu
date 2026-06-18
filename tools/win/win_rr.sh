@@ -4,19 +4,20 @@
 # Cold-boots tiny10 (MBR/SeaBIOS) under panda-ng TCG single-thread, records a
 # bounded mid-boot segment (heavy disk DMA + interrupts), replays it.
 set -uo pipefail
-cd "$HOME/winrr"
-Q="$HOME/panda-ng/build/qemu-system-x86_64"
-DISK="$HOME/winrr/win10_test.qcow2"; MON="$HOME/winrr/win_mon.sock"
-QLOG="$HOME/winrr/win_qemu.log"; RR="$HOME/winrr/rr/w1"
+source "$(cd "$(dirname "$0")/../.." && pwd)/tools/macos/rr_env.sh"
+cd "$WINVM"
+Q="$QEMU_BIN"
+DISK="$WINVM/win10_test.qcow2"; MON="$WINVM/win_mon.sock"
+QLOG="$WINVM/win_qemu.log"; RR="$WINVM/rr/w1"
 TARGET="${1:-20000000}"; BOOT="${2:-180}"; WAIT="${3:-600}"
-SENT="$HOME/winrr/win_rr.sentinel"
-rm -f "$SENT"; exec > "$HOME/winrr/win_rr.log" 2>&1
-T(){ python3 "$HOME/panda-ng/tools/macos/mon.py" "$MON" "$1" 2>/dev/null; }
+SENT="$WINVM/win_rr.sentinel"
+rm -f "$SENT"; exec > "$WINVM/win_rr.log" 2>&1
+T(){ python3 "$MON_PY" "$MON" "$1" 2>/dev/null; }
 
 pkill -9 -f qemu-system-x86_64 2>/dev/null; sleep 2
-rm -f "$QLOG" "$MON"; rm -rf "$HOME/winrr/rr"; mkdir -p "$HOME/winrr/rr"
+rm -f "$QLOG" "$MON"; rm -rf "$WINVM/rr"; mkdir -p "$WINVM/rr"
 echo "=== [$(date)] launch tiny10 under panda-ng ==="
-screen -dmS winrr bash -c "$Q -L $HOME/panda-ng/pc-bios -machine pc -accel tcg,thread=single \
+screen -dmS winrr bash -c "$Q -L $PCBIOS -machine pc -accel tcg,thread=single \
   -m 4096 -cpu qemu64 -drive file=$DISK,format=qcow2,if=ide -boot c \
   -monitor unix:$MON,server,nowait -vnc 127.0.0.1:25 -display none -nic none > $QLOG 2>&1"
 echo "=== booting ${BOOT}s ==="; sleep "$BOOT"

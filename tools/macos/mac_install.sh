@@ -6,7 +6,7 @@
 set -u
 cd "$HOME/macos"
 ACCEL="${1:-kvm}"
-QEMU="${QEMU_BIN:-$HOME/panda-ng/build/qemu-system-x86_64}"
+QEMU="${QEMU_BIN:-$HOME/qemu/build/qemu-system-x86_64}"
 OVMF_CODE="OSX-KVM/OVMF_CODE_4M.fd"
 OVMF_VARS_SRC="OSX-KVM/OVMF_VARS-1920x1080.fd"
 OVMF_VARS="mac_vars.fd"

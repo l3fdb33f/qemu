@@ -2,9 +2,9 @@
 # ABI verification: for each ported plugin, confirm every UND (undefined) symbol
 # is satisfied by libpanda or the standard runtime libs it will be loaded with.
 set -uo pipefail
-LIBPANDA=~/panda-ng/build/libpanda-x86_64-softmmu.so
-PLUGDIR=~/panda-ng-plugins/build/plugins
-IFACE=~/panda-ng/build/contrib/plugins/libpanda_plugin_interface.so
+LIBPANDA=~/qemu/build/libpanda-x86_64-softmmu.so
+PLUGDIR=~/panda-ng/build/plugins
+IFACE=~/qemu/build/contrib/plugins/libpanda_plugin_interface.so
 
 # Symbols exported (defined, T/W/etc — not U) by libpanda + the interface + the
 # system libs the process will have loaded (libc, libstdc++, glib, gmodule, curl).
