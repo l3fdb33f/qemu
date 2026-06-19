@@ -196,6 +196,12 @@ const char * valid_os_re[] = {
     "windows[-_]32[-_]2000",
     "windows[-_]32[-_]7sp[01]",
     "windows[-_]64[-_]7sp[01]",
+    // Windows 10/11 x64: PANDA has no built-in introspection profile for these
+    // (cosi provides OS introspection from a Volatility-3 ISF instead), but the
+    // os name must still validate so plugins see os_familyno=windows, bits=64.
+    // Accept an optional trailing build/sp tag (e.g. windows-64-10sp0).
+    "windows[-_]64[-_]10.*",
+    "windows[-_]64[-_]11.*",
     "linux[-_]32[-_].+",
     "linux[-_]64[-_].+",
     "freebsd[-_]32[-_].+",
