@@ -265,7 +265,6 @@ void panda_cleanup(void) {
     // }
 }
 
-#ifdef NO_INCLUDE
 /* Board-agnostic search for RAM memory region */
 MemoryRegion* panda_find_ram(void) {
 
@@ -327,7 +326,6 @@ Int128 panda_find_max_ram_address(void) {
 
   return curr_max;
 }
-#endif
 
 #if defined(TARGET_ARM)
 #define CPSR_M (0x1fU)
