@@ -228,6 +228,52 @@ target_ulong panda_get_retval(const CPUState *cpu) {
 #endif
 }
 
+// ---- x86 CPU-state accessors for out-of-tree introspection ----------------
+// cosi (Rust) cannot read CPUArchState fields through its bindgen bindings: the
+// struct layout depends on the QEMU build config, so the Rust view drifts from
+// the compiled libpanda. These getters are compiled with libpanda and therefore
+// always see the correct layout. Non-x86 targets return 0 (cosi is x86-only).
+
+target_ulong panda_get_gpr(const CPUState *cpu, int idx) {
+#if defined(TARGET_I386)
+    CPUArchState *env = cpu_env((CPUState *)cpu);
+    if (idx < 0 || idx >= CPU_NB_REGS) {
+        return 0;
+    }
+    return env->regs[idx];
+#else
+    (void)cpu; (void)idx;
+    return 0;
+#endif
+}
+
+target_ulong panda_get_lstar(const CPUState *cpu) {
+#if defined(TARGET_I386)
+    return ((CPUX86State *)cpu_env((CPUState *)cpu))->lstar;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+
+target_ulong panda_get_kernel_gs_base(const CPUState *cpu) {
+#if defined(TARGET_I386)
+    return ((CPUX86State *)cpu_env((CPUState *)cpu))->kernelgsbase;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+
+target_ulong panda_get_gs_base(const CPUState *cpu) {
+#if defined(TARGET_I386)
+    return ((CPUX86State *)cpu_env((CPUState *)cpu))->segs[R_GS].base;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+
 void panda_set_retval(CPUState *cpu, target_ulong value){
     CPUArchState *env = cpu_env((CPUState *)cpu);
 #if defined(TARGET_I386)

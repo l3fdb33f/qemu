@@ -89,6 +89,15 @@ target_ulong panda_current_ksp(CPUState * cpu);
 target_ulong panda_current_sp(const CPUState *cpu);
 target_ulong panda_get_retval(const CPUState *cpu);
 void panda_set_retval(CPUState *cpu, target_ulong arg);
+
+// x86 CPU-state accessors for out-of-tree introspection (e.g. the cosi Rust
+// plugin), which can't safely read CPUArchState fields through bindgen bindings
+// (the struct layout depends on the QEMU build config). These are compiled with
+// libpanda, so they always see the correct layout. Non-x86 targets return 0.
+target_ulong panda_get_gpr(const CPUState *cpu, int idx);   // env->regs[idx]
+target_ulong panda_get_lstar(const CPUState *cpu);          // IA32_LSTAR MSR
+target_ulong panda_get_kernel_gs_base(const CPUState *cpu); // IA32_KERNEL_GS_BASE
+target_ulong panda_get_gs_base(const CPUState *cpu);        // GS segment base
 target_ulong panda_get_syscall_arg(CPUState *cpu, int arg);
 void panda_set_syscall_arg(CPUState *cpu, int arg, target_ulong value);
 #ifdef __cplusplus
